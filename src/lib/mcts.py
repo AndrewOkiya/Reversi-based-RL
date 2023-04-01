@@ -18,14 +18,14 @@ class MCTS(object):
         self.Ns = collections.defaultdict(float)  # 状态 s 的出现次数
         self.valid_state = {}  # 某一个状态的可行走法，每个元素是一个 np.ndarray
 
-    def get_action_probility(self, relative_board, temp=1):
+    def get_action_probility(self, relative_board, others,temp=1):
         """
         执行 simulation_count 次模拟，返回每个动作会执行的概率
 
         temp = 1 代表返回每个动作执行的概率，temp = 0 代表最优动作的执行几率 100%
         """
         for i in range(self.args.simulation_count):
-            self.mcts_search(relative_board)
+            self.mcts_search(relative_board,others)
 
         state = relative_board.tostring()
         res = [self.Nsa[(state, action)] if (state, action) in self.Nsa else 0.0 for action in
@@ -41,13 +41,12 @@ class MCTS(object):
         eps = 1e-8
         return res if abs(res_sum) < eps else [probability * 1.0 / res_sum for probability in res]
 
-    def mcts_search(self, relative_board):
+    def mcts_search(self, relative_board, others):
         """
         一次 MCTS 搜索
         """
         # 当前状态转化为 str，便于作键
         state = relative_board.tostring()
-
         # a terminal state, 直接返回结果
         is_win = self.game.get_winner(relative_board)
         if is_win != self.game.WinnerState.GAME_RUNNING:
@@ -56,7 +55,7 @@ class MCTS(object):
         # 如果当前状态没有出现过
         if state not in self.Ps:
             # 这里从神经网络中获得预测，Ps 只是每种动作执行的可能性，v(s)in [-1,1]
-            self.Ps[state], v = self.nnet.predict(relative_board)
+            self.Ps[state], v = self.nnet.predict(relative_board,others)
 
             valid_move = self.game.get_legal_moves(1, relative_board)
             self.valid_state[state] = valid_move
@@ -95,8 +94,9 @@ class MCTS(object):
                         max_u = u
                         best_action = action
 
-            next_state, next_player = self.game.get_next_state(1, best_action, relative_board)
-            v = self.mcts_search(self.game.get_relative_state(next_player, next_state))
+            next_state, next_player ,others[6]= self.game.get_next_state(1, best_action, relative_board,others[6])
+            others=np.append(self.game.get_others(next_player),[others[6],0])
+            v = self.mcts_search(self.game.get_relative_state(next_player, next_state),others)
 
             # Qsa 怎么算的？？？
             self.Qsa[(state, best_action)] = (self.Nsa[(state, best_action)] * self.Qsa[(state, best_action)] + v) / (
