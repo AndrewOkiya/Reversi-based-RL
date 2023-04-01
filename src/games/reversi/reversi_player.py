@@ -12,7 +12,7 @@ class ReversiRandomPlayer(Player):
     随机AI
     """
 
-    def play(self, board):
+    def play(self, board,others):
         legal_moves_np = self.game.get_legal_moves(1, board)  # 获取可行动的位置
         legal_moves = []
         for i in range(self.game.n ** 2):
@@ -40,7 +40,7 @@ class ReversiGreedyPlayer(Player):
         # 贪心策略
         self.greedy_mode = greedy_mode
 
-    def play(self, board):
+    def play(self, board,others):
         legal_moves_np = self.game.get_legal_moves(1, board)  # 获取可行动的位置
         legal_moves = []
         for i in range(self.game.n ** 2):
@@ -53,7 +53,7 @@ class ReversiGreedyPlayer(Player):
                 # 贪心使得当前转换棋子数量最大
                 max_greedy = -self.game.n ** 2
                 for i in legal_moves:
-                    board_tmp, _ = self.game.get_next_state(1, i, board)
+                    board_tmp, _,cache = self.game.get_next_state(1, i, board)
                     sum_tmp = np.sum(board_tmp)
                     # print((i // self.game.n, i % self.game.n), ' greedy: ', sum_tmp)
                     if max_greedy < sum_tmp:
@@ -64,7 +64,7 @@ class ReversiGreedyPlayer(Player):
                 # 贪心使得对方行动力最小
                 max_greedy = self.game.n ** 2
                 for i in legal_moves:
-                    board_tmp, _ = self.game.get_next_state(1, i, board)
+                    board_tmp, _,cache = self.game.get_next_state(1, i, board)
                     # 对方可移动位置
                     legal_moves_tmp = self.game.get_legal_moves(_, board_tmp)
                     sum_tmp = np.sum(legal_moves_tmp[:-1])
@@ -81,7 +81,7 @@ class ReversiHumanPlayer(Player):
     人类AI，即手动操作
     """
 
-    def play(self, board):
+    def play(self, board,others):
         legal_moves_np = self.game.get_legal_moves(1, board)  # 获取可行动的位置
         legal_moves = []
         for i in range(self.game.n ** 2):
@@ -189,7 +189,7 @@ class ReversiBotzonePlayer(Player):
             break
         return self.is_finished
 
-    def play(self, board):
+    def play(self, board,others):
         resp = dict()
         last_action = self.referee.get_last_action()
         for mid, m in self.matches.items():
@@ -256,8 +256,8 @@ class ReversiRLPlayer(Player):
     def init(self, referee=None):
         super().init(referee)
 
-    def play(self, board):
-        counts = self.mcts1.get_action_probility(board, temp=1)
+    def play(self, board, others):
+        counts = self.mcts1.get_action_probility(board, others,temp=1)
         action = -1
         if self.choice_mode == 0:
             # 以预测胜率最大的点为下一步行动点

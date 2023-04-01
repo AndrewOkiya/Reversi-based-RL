@@ -6,10 +6,11 @@ import tensorflow as tf
 # from tensorflow.python.keras.models import *
 # from tensorflow.python.keras.optimizers import *
 # from tensorflow.python.keras.callbacks import TensorBoard
-from keras.layers import *
-from keras.models import *
-from keras.optimizers import *
-from keras.callbacks import TensorBoard
+from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras.layers import *
+from tensorflow.keras.models import *
+from tensorflow.keras.optimizers import *
+from tensorflow.keras.callbacks import TensorBoard
 import numpy as np
 
 
@@ -24,11 +25,12 @@ class NNetWrapper(NeuralNetAgent):
         """
         examples: list of examples, each example is of form (board, pi, v)
         """
-        input_boards, target_pis, target_vs = list(zip(*examples))
+        input_boards, others_state, target_pis, target_vs = list(zip(*examples))
         input_boards = np.asarray(input_boards)
+        others_state =np.asarray(others_state)
         target_pis = np.asarray(target_pis)
         target_vs = np.asarray(target_vs)
-
+        others_state=others_state[:,np.newaxis, :]
         tb_call_back = TensorBoard(log_dir=os.path.join(self.args.logs_folder, str(time.time())),  # log 目录
                                    histogram_freq=0,
                                    batch_size=self.args.batch_size,
@@ -39,12 +41,12 @@ class NNetWrapper(NeuralNetAgent):
                                    embeddings_layer_names=None,
                                    embeddings_metadata=None)
 
-        # 使用当前的棋盘作输入，拟合 (可行点的概率，权值)
-        self.nnet.model.fit(x=input_boards, y=[target_pis, target_vs], batch_size=self.args.batch_size,
+        # 使用当前的棋盘和其他状态作输入，拟合 (可行点的概率，权值)
+        self.nnet.model.fit(x=np.concatenate((input_boards, others_state), axis=1), y=[target_pis, target_vs], batch_size=self.args.batch_size,
                             epochs=self.args.epochs,
                             callbacks=[tb_call_back])
 
-    def predict(self, board):
+    def predict(self, board, others):
         """
         board: np array with board
         """
@@ -57,9 +59,9 @@ class NNetWrapper(NeuralNetAgent):
             board = np.array(tmp)
         else:
             board = board[np.newaxis, :, :]
-
+        others=others[np.newaxis,np.newaxis, :]
         # run
-        pi, v = self.nnet.model.predict(board)
+        pi, v = self.nnet.model.predict(np.concatenate((board, others), axis=1))
 
         # print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time()-start))
         return pi[0], v[0]
@@ -93,36 +95,19 @@ class OthelloNNet(object):
         self.board_x, self.board_y = game.get_board_size()
         self.action_size = game.get_action_size()
         self.args = args
-
         # Neural Net
-        if args.use_tpu:
-            # 使用 TPU 时这里可以在多个核心中并发提高效率
-            self.input_boards = Input(shape=(self.board_x, self.board_y),
-                                      batch_size=self.args.model_batch_size)  # batch_size 指定模型输入大小
-        else:
-            self.input_boards = Input(shape=(self.board_x, self.board_y))
-
-        x_image = Reshape((self.board_x, self.board_y, 1))(self.input_boards)  # batch_size  x board_x x board_y x 1
-        h_conv1 = Activation('relu')(BatchNormalization(axis=3)(
-            Conv2D(args.num_channels, 3, padding='same', use_bias=False)(
-                x_image)))  # batch_size  x board_x x board_y x num_channels
-        h_conv2 = Activation('relu')(BatchNormalization(axis=3)(
-            Conv2D(args.num_channels, 3, padding='same', use_bias=False)(
-                h_conv1)))  # batch_size  x board_x x board_y x num_channels
-        h_conv3 = Activation('relu')(BatchNormalization(axis=3)(
-            Conv2D(args.num_channels, 3, padding='valid', use_bias=False)(
-                h_conv2)))  # batch_size  x (board_x-2) x (board_y-2) x num_channels
-        h_conv4 = Activation('relu')(BatchNormalization(axis=3)(
-            Conv2D(args.num_channels, 3, padding='valid', use_bias=False)(
-                h_conv3)))  # batch_size  x (board_x-4) x (board_y-4) x num_channels
-        h_conv4_flat = Flatten()(h_conv4)
-        s_fc1 = Dropout(args.dropout)(Activation('relu')(
-            BatchNormalization(axis=1)(Dense(1024, use_bias=False)(h_conv4_flat))))  # batch_size x 1024
-        s_fc2 = Dropout(args.dropout)(
-            Activation('relu')(BatchNormalization(axis=1)(Dense(512, use_bias=False)(s_fc1))))  # batch_size x 1024
-        self.pi = Dense(self.action_size, activation='softmax', name='pi')(s_fc2)  # batch_size x self.action_size
-        self.v = Dense(1, activation='tanh', name='v')(s_fc2)  # batch_size x 1
-
+        self.input_boards = Input(shape=(self.board_x+1, self.board_y))
+        board = Lambda(lambda x: x[:, :8, :8])(self.input_boards)
+        status_param = Lambda(lambda x: x[:, 8, :7])(self.input_boards)
+        x_image = Reshape((self.board_x, self.board_y, 1))(board) # batch_size  x board_x x board_y x 1
+        params = Reshape((7,))(status_param)
+        h_conv1 = Activation('relu')(Conv2D(args.num_channels, 3, padding='same', use_bias=True)(x_image)) # batch_size  x board_x x board_y x num_channels
+        board=Add()([h_conv1,board])
+        h_conv4_flat = Flatten()(board)
+        inputfc=Concatenate(axis=-1)([h_conv4_flat, params])
+        s_fc1 = Dropout(args.dropout)(Activation('relu')(Dense(5, use_bias=False)(inputfc)))  # batch_size x 1024# batch_size x 1024
+        self.pi = Dense(self.action_size, activation='softmax', name='pi')(s_fc1)  # batch_size x self.action_size
+        self.v = Dense(1, activation='tanh', name='v')(s_fc1)  # batch_size x 1
         self.model = Model(inputs=self.input_boards, outputs=[self.pi, self.v])
 
         if args.use_tpu:
@@ -134,4 +119,4 @@ class OthelloNNet(object):
                 )
             )
         self.model.compile(loss=['categorical_crossentropy', 'mean_squared_error'],
-                           optimizer=tf.train.AdamOptimizer(learning_rate=args.lr))
+                           optimizer=tf.optimizers.Adam(learning_rate=args.lr))
