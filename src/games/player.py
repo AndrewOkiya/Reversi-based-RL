@@ -17,7 +17,7 @@ class Player(object):
         self.referee = referee
         pass
 
-    def play(self, board):
+    def play(self, board,others):
         """
         玩家在当前棋盘中走一步及行动概率
         :param board: 要更新的棋盘

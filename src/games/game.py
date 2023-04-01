@@ -49,7 +49,7 @@ class Game(object):
         """
         pass
 
-    def get_next_state(self, player, action, board):
+    def get_next_state(self, player, action, board,turn):
         """
         获取在action执行完以后的棋盘状态
 
@@ -59,7 +59,8 @@ class Game(object):
             board: 棋盘，为 None 代表使用已创建的棋盘
         """
         pass
-
+    
+    
     def get_board_size(self):
         """
         获取棋盘大小

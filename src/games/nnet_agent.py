@@ -1,6 +1,6 @@
 class NeuralNetAgent(object):
 
-    def predict(self, board):
+    def predict(self, board, others):
         """
         输入当前棋盘（相对），预测每个点的权值
         """
