@@ -12,6 +12,7 @@ class Referee(object):
         self.player2 = player2  # player2 是后手
         self.game = game  # 当前游戏
         self.__board = []  # 棋盘所有过程，可用于悔棋
+        self.__others=[]    #所有的棋盘相关序列
         self.__pi_list = []  # 棋盘序列预测概率值
         self.__action_list = []  # 所有执行过的动作，嗯~ 用于 botzone 交互时得知对方的走棋状态（其实一步就可以了不需要一个列表QAQ）
         pass
@@ -29,6 +30,9 @@ class Referee(object):
     def get_baord_list(self):
         """获取所有的棋盘序列"""
         return self.__board
+    def get_others_list(self):
+        """获取所有的棋盘相关序列"""
+        return self.__others
 
     def init(self):
         self.__board.clear()
@@ -38,21 +42,20 @@ class Referee(object):
     def play_game(self, verbose=False):
         """开始游戏"""
         self.init()
-
+        step = 1  # 行走的步数
+        chesstobeplayed=1
         current_player = 1
         current_board = self.game.init()
-
+        current_others= np.append(self.game.get_others(current_player),[chesstobeplayed,0])
         # 记录第一步
         self.__board.append(current_board)
-
+        self.__others.append(current_others)
         self.player1.init(referee=self)  # 先初始化，必须要做
         self.player2.init(referee=self)
-
         player = [self.player2, None, self.player1]
-        step = 1  # 行走的步数
         while self.game.get_winner(current_board) == self.game.WinnerState.GAME_RUNNING:
             action, *prob = player[current_player + 1].play(
-                self.game.get_relative_state(current_player, current_board))  # 返回对 current_board 的走法以及预测行走概率
+                self.game.get_relative_state(current_player, current_board),current_others)  # 返回对 current_board 的走法以及预测行走概率
             if verbose:
                 self.game.display(current_board)
                 print("step {} {} --> {}".format(step, player[current_player + 1].description,
@@ -64,14 +67,15 @@ class Referee(object):
                 # action == -1 or action == self.n ** 2 代表无路可走的情况
                 legal_moves = self.game.get_legal_moves(current_player, current_board)
                 assert legal_moves[action] == 1
-            current_board, current_player = self.game.get_next_state(current_player, action, current_board)
+            current_board, current_player,chesstobeplayed = self.game.get_next_state(current_player, action, current_board,chesstobeplayed)
+            current_others=np.append(self.game.get_others(current_player),[chesstobeplayed,0])
             # 记录历史棋盘，一方面可以用来训练神经网络
             self.__board.append(current_board)
+            self.__others.append(current_others)
             step += 1
         # 对局结束后双方 AI 各走一步，主要是使某些延迟类 AI 知道此时游戏已经结束了（但还是存在 bug）
-        player[current_player + 1].play(current_board)
-        player[-current_player + 1].play(current_board)
-
+        player[current_player + 1].play(current_board,current_others)
+        player[-current_player + 1].play(current_board,current_others)
         if verbose:
             print('---------------------------')
             self.game.display(current_board)

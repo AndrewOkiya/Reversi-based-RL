@@ -33,13 +33,15 @@ class Coach(object):
         e = 1
         # v 表示哪个玩家胜利了
         v = 0 if result == game.WinnerState.DRAW else 1 if result == game.WinnerState.PLAYER1_WIN else -1
-
-        board_list = referee.get_baord_list()[:-1]  # 去除最后一个的原因：1. 最后一个棋盘是终止态 2. 与 pi 一一对应
-        pi_list = referee.get_pi_list()  # 这里的 pi 全部是对 CanonicalForm 而言的，即对白棋来说 board * -1 对应这个 pi
+        # 去除最后一个的原因：1. 最后一个棋盘是终止态 2. 与 pi 一一对应
+        board_list = referee.get_baord_list()[:-1]
+        player_list = referee.get_others_list()[:-1] #边角占比，边缘子占比，子树比，行动力比，不需要额外操作
+        # 这里的 pi 全部是对 CanonicalForm 而言的，即对白棋来说 board * -1 对应这个 pi
+        pi_list = referee.get_pi_list()
         for i in range(len(board_list)):
-            symmetries = game.get_symmetries(e * board_list[i], pi_list[i])
-            for board, pi in symmetries:  # 这里是 board 的旋转以及对称，因为这些操作不会影响局面形式
-                train_examples.append((board, pi, v))
+            symmetries = game.get_symmetries(e * board_list[i], player_list[i] ,pi_list[i])
+            for board,others,pi in symmetries:  # 这里是 board 的旋转以及对称，因为这些操作不会影响局面形式
+                train_examples.append((board,others, pi, v))
             e = -e
             v = -v
         return train_examples
@@ -58,7 +60,8 @@ class Coach(object):
         episode_time = time.time()
         train_examples_tmp = []
         for _ in range(process_episode_num):
-            train_examples_tmp += self.execute_episode(self.game, player, player)
+            train_examples_tmp += self.execute_episode(
+                self.game, player, player)
             print('execute episode in process {} : {} / {}, episode time: {}'.format(idx, _ + 1, process_episode_num,
                                                                                      time.time() - episode_time))
             episode_time = time.time()
@@ -68,7 +71,8 @@ class Coach(object):
         """
         self play，返回得到的 train_examples_list
         """
-        train_examples_list = deque([], maxlen=self.args.num_iteration_train_examples)
+        train_examples_list = deque(
+            [], maxlen=self.args.num_iteration_train_examples)
         start_time = time.time()  # 开始执行的时间
 
         if self.args.use_multiprocessing:
@@ -84,9 +88,11 @@ class Coach(object):
             for res in result:
                 train_examples_list += res.get()
         else:
-            train_examples_list += self.async_execute_episode(0, self.args.num_episode)
+            train_examples_list += self.async_execute_episode(
+                0, self.args.num_episode)
 
-        print('parallel_self_play {} done! time: {}s'.format(idx, time.time() - start_time))
+        print('parallel_self_play {} done! time: {}s'.format(
+            idx, time.time() - start_time))
         return train_examples_list
 
     def async_self_test_play(self, idx, process_test_num):
@@ -94,13 +100,12 @@ class Coach(object):
         set_gpu_memory_grow()
         # 加载新模型玩家（从刚刚训练好的 train_folder_file 加载）
         n_player = ReversiRLPlayer(game=self.game, choice_mode=0, nnet=None,
-                                   check_point=[self.args.checkpoint_folder, self.args.train_folder_file],
+                                   check_point=[
+                                       self.args.checkpoint_folder, self.args.train_folder_file],
                                    args=self.args)
         # 加载旧模型玩家（旧的 best_folder_file）
-        p_player = ReversiRLPlayer(game=self.game, choice_mode=0, nnet=None,
-                                   check_point=[self.args.checkpoint_folder, self.args.best_folder_file],
-                                   args=self.args)
-
+        p_player = ReversiRLPlayer(game=self.game, choice_mode=0, nnet=None, check_point=[self.args.checkpoint_folder, self.args.best_folder_file],args=self.args)
+        #p_player =ReversiRandomPlayer(game=self.game)
         # 当目前只有一个进程执行 test 时启用退出阈值
         exit_threshold = (
             float('inf'), float('inf')) if self.args.use_multiprocessing and self.args.num_test_play_pool != 1 else (
@@ -109,7 +114,8 @@ class Coach(object):
         n_wins, p_wins, draws = Referee(n_player, p_player, self.game).play_games(process_test_num, verbose=False,
                                                                                   exit_threshold=exit_threshold)
 
-        print('process: {}, new/prev wins : {} / {}, draws : {}'.format(idx, n_wins, p_wins, draws))
+        print('process: {}, new/prev wins : {} / {}, draws : {}'.format(idx,
+              n_wins, p_wins, draws))
         return n_wins, p_wins, draws
 
     def parallel_self_test_play(self, idx):
@@ -136,7 +142,8 @@ class Coach(object):
                 p_wins += p_wins_tmp
                 draws += draws_tmp
         else:
-            n_wins, p_wins, draws = self.async_self_test_play(0, self.args.num_arena_compare)
+            n_wins, p_wins, draws = self.async_self_test_play(
+                0, self.args.num_arena_compare)
 
         print(
             'Final new/prev wins : {} / {}, draws : {}, time: {}'.format(n_wins, p_wins, draws,
@@ -161,7 +168,7 @@ class Coach(object):
     def train_network(self, train_examples_history):
         nnet = NNet(self.game, self.args)
         # 从最优模型加载
-        nnet.load_checkpoint(folder=self.args.checkpoint_folder, filename=self.args.best_folder_file)
+        #nnet.load_checkpoint(folder=self.args.checkpoint_folder, filename=self.args.best_folder_file)
         train_examples = []
         for e in train_examples_history:
             train_examples.extend(e)
@@ -170,27 +177,32 @@ class Coach(object):
         # 开始训练
         nnet.train(train_examples)
         # 保存为训练模型
-        nnet.save_checkpoint(folder=self.args.checkpoint_folder, filename=self.args.train_folder_file)
+        nnet.save_checkpoint(folder=self.args.checkpoint_folder,
+                             filename=self.args.train_folder_file)
 
     def parallel_train_network(self, idx, train_examples_history):
         train_start_time = time.time()
         if self.args.use_multiprocessing:
             # 使用得到的数据进行训练（这里单进程进行，使用 Process 可以看到显存被释放了，虽然不懂 tf 有没有在自己维护的内部自动释放）
-            p = multiprocessing.Process(target=self.train_network, args=(train_examples_history,))
+            p = multiprocessing.Process(
+                target=self.train_network, args=(train_examples_history,))
             p.start()
             p.join()
         else:
             self.train_network(train_examples_history)
-        print('------- iteration {} train done! time: {}s ----------'.format(idx, time.time() - train_start_time))
+        print('------- iteration {} train done! time: {}s ----------'.format(idx,
+              time.time() - train_start_time))
 
     def start_learn(self):
         """学习学习"""
         # 保存所有的 examples 记录
-        train_examples_history = deque(maxlen=self.args.num_train_examples_history)
+        train_examples_history = deque(
+            maxlen=self.args.num_train_examples_history)
 
         # 从前一次保存的 examples 加载数据
         if self.args.load_model and self.load_train_examples(self.args.iteration_start - 1, train_examples_history):
-            print('load model from', self.args.train_examples_filename_format.format(self.args.iteration_start - 1))
+            print('load model from', self.args.train_examples_filename_format.format(
+                self.args.iteration_start - 1))
 
         for i in range(self.args.iteration_start, self.args.iteration_start + self.args.num_iteration):  # 迭代
             print("----------------- {} th iteration ----------------".format(i))
@@ -209,7 +221,8 @@ class Coach(object):
     def save_train_examples(self, idx, train_examples_history):
         # 存储测试点
         try:
-            filename = os.path.join(self.args.checkpoint_folder, self.args.train_examples_filename_format.format(idx))
+            filename = os.path.join(
+                self.args.checkpoint_folder, self.args.train_examples_filename_format.format(idx))
             with open(filename, 'wb+') as f:
                 pickle.Pickler(f).dump(train_examples_history)
             f.close()
@@ -219,7 +232,8 @@ class Coach(object):
     def load_train_examples(self, idx, train_examples_history):
         # 加载测试点
         try:
-            filename = os.path.join(self.args.checkpoint_folder, self.args.train_examples_filename_format.format(idx))
+            filename = os.path.join(
+                self.args.checkpoint_folder, self.args.train_examples_filename_format.format(idx))
             if os.path.isfile(filename):
                 with open(filename, 'rb') as f:
                     train_examples_history += pickle.Unpickler(f).load()
@@ -237,3 +251,5 @@ if __name__ == '__main__':
     pprint.pprint(default_args)
     coach = Coach(g, default_args)
     coach.start_learn()
+    #nn=NNet(g,default_args)
+    #nn.
