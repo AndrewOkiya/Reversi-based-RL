@@ -67,7 +67,7 @@ class ReversiGame(Game):
         return self.logic.pieces
 
     def evaluate(self,board, validmove):
-        ans=np.zeros(5,dtype=np.float_) #角差，星位差，边缘子比，子数比，行动力比
+        ans=np.zeros(5,dtype=np.float_) #星位差，角差，边缘子比，子数比，行动力比
         ft=[0,0,0]
         f=[0,0,0]
         i,j,k,fn,fo =0,0,0,0,0
@@ -84,8 +84,9 @@ class ReversiGame(Game):
                         tem1=i+dir[k][0]
                         tem2=j+dir[k][1]
                         if 0 <= tem1 < self.n and 0 <= tem2 < self.n:
-                            ft[board[i][j]+1]+=1
-                            break
+                            if(board[tem1][tem2]==0):
+                                ft[board[i][j]+1]+=1
+                                break
                     f[board[i][j]+1]+=1
         if (f[2] > f[0]):
             ans[3] = (f[0]) / (f[2] + f[0])
@@ -99,7 +100,6 @@ class ReversiGame(Game):
             ans[4] = (fn) / (fn + fo)
         elif (fn < fo):
             ans[4] = -(fo) / (fn + fo)
-        ft = [0,0,0]
         if board[0][0]:
             ans[1]+=board[0][0]
         else:
